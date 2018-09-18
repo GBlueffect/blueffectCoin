@@ -65,12 +65,9 @@ const handleSocketMessage = ws=>{
         if(message === null){
             return;
         }
-        // console.log('handleSocketMessage 시작 => message on ');
-        // console.log(`message.type ::  ${message.type}`);
-        // console.log(message);
+
         switch(message.type){
             case GET_LATEST:
-                // 이부분이 잘 이해 되지 않음. GET_LATEST 는 어디서 넣지??
                 sendMessage(ws, responseLatest());  
                 break;
             case BLOCKCHAIN_RESPONSE:
@@ -82,10 +79,6 @@ const handleSocketMessage = ws=>{
                 break;
             case GET_ALL:
                 
-                // const blockchain = responseAll();
-                console.log(`GET_ALL---- ::`);
-                console.log(responseAll().data);
-                console.log('여기까지 오긴 했는데...');
                 handleBlockchainResponse(responseAll().data);
                 break;
         }
@@ -93,7 +86,6 @@ const handleSocketMessage = ws=>{
 };
 
 const handleBlockchainResponse = receiveBlocks =>{
-    // console.log(`receiveBlocks :: ${receiveBlocks}`);
 
     if(receiveBlocks.length === 0){
         console.log('Received blocks have a length of 0');
@@ -107,28 +99,15 @@ const handleBlockchainResponse = receiveBlocks =>{
         return;
     }
     const newestBlock = getNewestBlock();
-
-    console.log('receiveBlocks :: receiveBlocks.length === 1 ;::'+receiveBlocks.length );
-    console.log(receiveBlocks);
-    console.log('latestBlockReceived :: latestBlockReceived.index  ::' + latestBlockReceived.index );
-    console.log(latestBlockReceived);
-    console.log('newestBlock :: newestBlock.index  ::' + newestBlock.index );
-    console.log(newestBlock);
-
     if(latestBlockReceived.index > newestBlock.index){
         if(newestBlock.hash === latestBlockReceived.previousHash){
-            addBlockToChain(latestBlockReceived);
+            if(addBlockToChain(latestBlockReceived)){
+                broadcastNewBlock();
+            }
         }else if(receiveBlocks.length === 1){
             console.log('latestBlockReceived.length === 1');
-            console.log('여기는 몇번을 타고 있을까~!!!');
             sendMessageToAll(getALL());
         }else{
-            console.log('여기까진 왔나???');
-            console.log('receiveBlocks :: receiveBlocks.length ::'+receiveBlocks.length);
-            console.log(receiveBlocks);
-            console.log('latestBlockReceived :: latestBlockReceived.length ::'+latestBlockReceived.length);
-            console.log(latestBlockReceived);
-
             replaceChain(receiveBlocks);
         }
     }
@@ -144,12 +123,9 @@ const sendMessageToAll = message =>{
 
 const responseLatest = () => blockchainResponse([getNewestBlock()]);
 
-const responseAll = () =>{
-    // console.log('responseAll ::');
-    // // // console.log(getBlockchain());
-    // console.log(blockchainResponse(getBlockchain()));
-    return blockchainResponse(getBlockchain());
-}
+const responseAll = () => blockchainResponse(getBlockchain());
+
+const broadcastNewBlock = ()=> sendMessageToAll(responseLatest());
 
 const handleSocketError = ws =>{
     const closeSocketConnection = ws =>{
@@ -171,5 +147,6 @@ const connectToPeers = newPeer =>{
 
 module.exports ={
     startP2PServer,
-    connectToPeers
+    connectToPeers,
+    broadcastNewBlock
 }

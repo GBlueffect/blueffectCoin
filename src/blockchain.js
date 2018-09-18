@@ -1,12 +1,27 @@
 const CryptoJS = require("crypto-js");
+const hexToBinary = require("hex-to-binary");
 
+const BLOCK_GENERATION_INTERVAL = 10;
+const DIFFICULTY_ADJUSTMENT_NTERVAL = 10;
+
+/*
+    // 블럭체인이 난이도를 조절하는 방법
+    2016개마다 난이도를 조절하고 있고, 
+    바로 근처에 생성된 블럭의 시간을 보고 조절하고 있다. 
+
+    ** 산포도(reminder) 
+    : 분산 및 표준편차. 대푯값 주위에 흩어져 있는 정도. 
+
+*/
 class Block{
-    constructor(index, hash, previousHash, timestamp, data){
+    constructor(index, hash, previousHash, timestamp, data, difficulty, nonce){
         this.index = index;
         this.hash = hash;
         this.previousHash = previousHash;
         this.timestamp = timestamp;
         this.data = data;
+        this.difficulty = difficulty;
+        this.nonce = nonce;
     }
 }
 
@@ -15,7 +30,9 @@ const genesisBlock = new Block(
     "46E0C4BD6C63BE160F662042E28D17D7B441187C7959D88C6B619C40D1188CAE",
     null,
     1536640032038,
-    "This is the genesis!!"
+    "This is the genesis!!",
+    0,
+    0
 );
 
 let blockchain = [genesisBlock];
@@ -26,32 +43,71 @@ const getTimeStamp = () => new Date().getTime() / 1000;
 
 const getBlockchain = () => blockchain;
 
-const createHash = (index, previousHash, timestamp, data) =>
-    CryptoJS.SHA256(index + previousHash + timestamp + JSON.stringify(data)).toString();
+const createHash = (index, previousHash, timestamp, data, difficulty, nonce) =>
+    CryptoJS.SHA256(index + previousHash + timestamp + JSON.stringify(data) + difficulty + nonce).toString();
 
 const createNewBlock = data =>{
     const previousBlock = getNewestBlock();
     const newBlockIndex = previousBlock.index + 1;
     const newTimestamp = getTimeStamp();
-    const newHash = createHash(
-        newBlockIndex, 
-        previousBlock.hash, 
-        newTimestamp, 
-        data
-    );
-
-    const newBlock = new Block(
+    const difficulty = findDifficulty();
+    const newBlock = findBlock(
         newBlockIndex,
-        newHash, 
         previousBlock.hash, 
         newTimestamp, 
-        data
+        data,
+        difficulty
     );
     addBlockToChain(newBlock);
+    require('./p2p').broadcastNewBlock();
     return newBlock;
 };
 
-const getBlocksHash = (block) => createHash(block.index, block.previousHash, block.timestamp, block.data);
+const findDifficulty = ()=>{
+    const newestBlock = getNewestBlock();
+    if(newestBlock.index % DIFFICULTY_ADJUSTMENT_NTERVAL === 0 && newestBlock.index !== 0){
+        //calculate new difficulty
+        return calculateNewDifficulty(newestBlock, getBlockchain());
+    }else{
+        return newestBlock.difficulty;
+    }
+};
+
+const calculateNewDifficulty = (newestBlock, blockchain)=>{
+    const lastCalculateBlock = blockchain[blockchain.length - DIFFICULTY_ADJUSTMENT_NTERVAL];
+    const timeExpected = BLOCK_GENERATION_INTERVAL * DIFFICULTY_ADJUSTMENT_NTERVAL;
+    const timeTaken = newestBlock.timestamp - lastCalculateBlock.timestamp;
+
+    if(timeTaken < timeExpected/2){
+        return lastCalculateBlock.difficulty + 1;
+    }else if(timeTaken > timeExpected*2){
+        return lastCalculateBlock.difficulty -1;
+    }else{
+        return lastCalculateBlock.difficulty;
+    }
+};
+
+const findBlock = (index, previousHash, timestamp, data, difficulty)=>{
+    let nonce = 0;
+    while(true){
+        const hash = createHash(index, previousHash, timestamp, data, difficulty, nonce);
+        // check amount of zeros(hashMachesDifficulty)
+        if(hashMatchesDifficulty(hash, difficulty)){
+            return new Block(index, hash, previousHash, timestamp, data, difficulty, nonce);
+        }
+        
+        nonce++;
+    }
+};
+
+const hashMatchesDifficulty = (hash, difficulty)=>{
+    const hashInBinary = hexToBinary(hash);
+    const requiredZeros = "0".repeat(difficulty);
+    console.log('Trying difficulty:', difficulty, ' with hash :', hash);
+    return hashInBinary.startsWith(requiredZeros);
+};
+
+const getBlocksHash = (block) => createHash(block.index, block.previousHash, block.timestamp, block.data, block.difficulty, block.nonce);
 
 const isBlockValid = (candidateBlock, latestBlock) =>{
     if(!isBlockStructureValid(candidateBlock)){
